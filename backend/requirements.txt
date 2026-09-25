@@ -1,0 +1,15 @@
+# ── Core Backend ─────────────────────────────
+fastapi==0.128.0
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+python-dotenv==1.2.2
+
+# ── HTTP / GitHub API ────────────────────────
+httpx==0.28.1
+
+# ── AI / LLM ─────────────────────────────────
+openai==1.61.1
+
+# ── Testing ───────────────────────────────────
+pytest==9.0.3
+pytest-asyncio==1.3.0
