@@ -7,6 +7,7 @@ function App() {
       <p>Hello CompileSyntaxError Here</p>
       <p>Mullick Waliullah</p>
       <p>Zaid</p>
+      <p>Nadia Muskan</p>
     </>
   )
 }
