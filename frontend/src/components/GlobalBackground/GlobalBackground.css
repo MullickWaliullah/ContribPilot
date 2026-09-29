@@ -1,0 +1,608 @@
+/* =========================================================
+   GLOBAL ANIMATED BACKGROUND — DARK PARTICLE / STARFIELD
+   React + Vite + Tailwind friendly
+   Keeps the background fixed behind the entire page.
+   ========================================================= */
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg-main: #08090d;
+  --bg-deep: #050609;
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1aa;
+  --accent-blue: #2563ff;
+  --accent-blue-light: #4d7cff;
+  --accent-cyan: #22d3ee;
+  --border-soft: rgba(255, 255, 255, 0.09);
+}
+
+/* ---------- Base ---------- */
+html {
+  min-height: 100%;
+  background: var(--bg-main);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: "DM Sans", "Inter", system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+}
+
+::selection {
+  color: #fff;
+  background: rgba(37, 99, 255, 0.42);
+}
+
+/* ---------- Background root ---------- */
+.global-bg-root,
+.ambient-background {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 55% 42% at 50% 58%,
+      rgba(22, 34, 75, 0.24), transparent 76%),
+    radial-gradient(ellipse 38% 34% at 50% 100%,
+      rgba(25, 46, 110, 0.20), transparent 75%),
+    linear-gradient(180deg, #08090d 0%, #090a10 55%, #07080d 100%);
+}
+
+/* Soft blue light behind the content */
+.ambient-background::before,
+.global-bg-root::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  background:
+    radial-gradient(ellipse 25% 22% at 17% 34%,
+      rgba(26, 76, 255, 0.14), transparent 75%),
+    radial-gradient(ellipse 27% 24% at 78% 62%,
+      rgba(23, 55, 190, 0.12), transparent 76%),
+    radial-gradient(ellipse 35% 28% at 50% 82%,
+      rgba(17, 37, 105, 0.15), transparent 78%);
+  filter: blur(42px);
+  opacity: 0.85;
+  transform: translate3d(-2%, 0, 0);
+  animation: backgroundAurora 26s ease-in-out infinite alternate;
+}
+
+/* ---------- Tiny star / particle field ----------
+   Several radial-gradient layers imitate the tiny floating
+   lights visible in the reference video. */
+.global-bg-root::after,
+.ambient-background::after {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  opacity: 0.56;
+  background-image:
+    radial-gradient(circle, rgba(220, 231, 255, 0.92) 0 0.7px, transparent 1.3px),
+    radial-gradient(circle, rgba(93, 139, 255, 0.95) 0 0.9px, transparent 1.6px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.62) 0 0.6px, transparent 1.2px),
+    radial-gradient(circle, rgba(51, 103, 255, 0.78) 0 0.8px, transparent 1.5px);
+  background-size: 137px 151px, 211px 193px, 97px 113px, 173px 227px;
+  background-position: 0 0, 40px 70px, 17px 39px, 90px 15px;
+  animation: particleDrift 90s linear infinite;
+  mask-image: radial-gradient(ellipse at center, #000 20%, rgba(0,0,0,.85) 58%, transparent 88%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, rgba(0,0,0,.85) 58%, transparent 88%);
+}
+
+/* Optional extra particle layer if your background markup includes .grid */
+.grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image:
+    radial-gradient(circle, rgba(160, 185, 255, 0.9) 0 0.75px, transparent 1.4px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.6) 0 0.55px, transparent 1.2px);
+  background-size: 181px 167px, 113px 139px;
+  background-position: 20px 10px, 70px 50px;
+  animation: gridParticleDrift 75s linear infinite;
+}
+
+/* Very subtle central vignette and edge shading */
+.glass-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.3'/%3E%3C/svg%3E");
+}
+
+/* If the old background markup has glass orbs, keep them very faint
+   so they don't look like large foreground bubbles. */
+.glass-orbs {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.glass-orb {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  opacity: 0.10;
+  background: radial-gradient(circle at 35% 30%,
+    rgba(87, 126, 255, 0.12), rgba(35, 60, 150, 0.06) 42%, transparent 72%);
+  filter: blur(26px);
+  animation: orbDrift 34s ease-in-out infinite alternate;
+}
+
+.glass-orb.one { top: 8%; left: 7%; }
+.glass-orb.two { right: 5%; top: 48%; animation-delay: -12s; }
+.glass-orb.three { left: 36%; bottom: -5%; animation-delay: -22s; }
+
+/* ---------- Keep actual website content above the background ---------- */
+#root > *:not(.global-bg-root):not(.ambient-background):not(.glass-orbs):not(.grid):not(.glass-grain):not(.scene-container) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- 3D animated text layer ----------
+   The text animation stays visible above the particle background. */
+.scene-container {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  perspective: 1200px;
+  perspective-origin: 50% 50%;
+  transform-style: preserve-3d;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.scene {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-style: preserve-3d;
+  pointer-events: none;
+  white-space: nowrap;
+  will-change: transform, top, left;
+}
+
+.scene.contrib {
+  animation:
+    contribRotate 20s linear infinite,
+    contribMove 40s ease-in-out infinite;
+}
+
+.scene.compile {
+  animation:
+    compileRotate 20s linear infinite,
+    compileMove 40s ease-in-out infinite;
+}
+
+.text-3d {
+  position: relative;
+  display: inline-block;
+  width: max-content;
+  height: max-content;
+  transform-style: preserve-3d;
+  perspective: 1200px;
+  user-select: none;
+}
+
+.text-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-style: preserve-3d;
+  transform:
+    translate(-50%, -50%)
+    translateZ(var(--z));
+  white-space: nowrap;
+  font-family:
+    "Space Grotesk",
+    "DM Sans",
+    "Inter",
+    sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1;
+  color: var(--layer-color);
+  backface-visibility: visible;
+  -webkit-font-smoothing: antialiased;
+  will-change: transform;
+}
+
+.contrib .text-layer {
+  font-size: clamp(34px, 7vw, 112px);
+}
+
+.compile .text-layer {
+  font-size: clamp(23px, 4.1vw, 70px);
+  letter-spacing: -0.06em;
+}
+
+.text-layer.depth {
+  z-index: 1;
+  color: #6d8cff;
+  text-shadow:
+    0 1px 0 rgba(129, 140, 248, 0.10),
+    0 4px 8px rgba(0, 0, 0, 0.7);
+}
+
+.text-layer.front {
+  z-index: 100;
+  color: #6d8cff;
+  -webkit-text-stroke: 1px rgba(165, 180, 252, 0.45);
+  text-shadow:
+    0 0 8px rgba(37, 99, 255, 0.70),
+    0 0 24px rgba(37, 99, 255, 0.45),
+    0 0 55px rgba(37, 99, 255, 0.22);
+}
+
+.text-layer.highlight {
+  z-index: 101;
+  color: #e0e7ff;
+  opacity: 0.24;
+  transform:
+    translate(-50%, -50%)
+    translateZ(1px)
+    translateY(-0.7px);
+  pointer-events: none;
+}
+
+.text-shadow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform:
+    translate(-50%, -50%)
+    translateZ(-65px)
+    translate(22px, 30px);
+  font-family:
+    "Space Grotesk",
+    "DM Sans",
+    sans-serif;
+  font-weight: 800;
+  white-space: nowrap;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.9);
+  filter: blur(15px);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.contrib .text-shadow {
+  font-size: clamp(34px, 7vw, 112px);
+}
+
+.compile .text-shadow {
+  font-size: clamp(23px, 4.1vw, 70px);
+}
+
+.gold-aura {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform:
+    translate(-50%, -50%)
+    translateZ(-100px);
+  font-family:
+    "Space Grotesk",
+    "DM Sans",
+    sans-serif;
+  font-weight: 800;
+  white-space: nowrap;
+  line-height: 1;
+  color: #6d8cff;
+  filter: blur(45px);
+  opacity: 0.18;
+  pointer-events: none;
+  animation: auraPulse 7s ease-in-out infinite;
+}
+
+.contrib .gold-aura {
+  font-size: clamp(34px, 7vw, 112px);
+}
+
+.compile .gold-aura {
+  font-size: clamp(23px, 4.1vw, 70px);
+}
+
+/* ---------- 3D rotation ---------- */
+@keyframes contribRotate {
+  0% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.18)
+      rotateX(0deg)
+      rotateY(0deg)
+      rotateZ(0deg);
+  }
+  12% {
+    transform:
+      translate(-50%, -50%)
+      scale(1.18)
+      rotateX(12deg)
+      rotateY(135deg)
+      rotateZ(-2deg);
+  }
+  20% {
+    transform:
+      translate(-50%, -50%)
+      scale(1.05)
+      rotateX(7deg)
+      rotateY(180deg)
+      rotateZ(1deg);
+  }
+  42% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.91)
+      rotateX(-4deg)
+      rotateY(225deg)
+      rotateZ(-1deg);
+  }
+  65% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.72)
+      rotateX(-9deg)
+      rotateY(292deg)
+      rotateZ(2deg);
+  }
+  82% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.44)
+      rotateX(4deg)
+      rotateY(340deg)
+      rotateZ(0deg);
+  }
+  100% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.18)
+      rotateX(0deg)
+      rotateY(360deg)
+      rotateZ(0deg);
+  }
+}
+
+@keyframes compileRotate {
+  0% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.18)
+      rotateX(0deg)
+      rotateY(0deg)
+      rotateZ(0deg);
+  }
+  12% {
+    transform:
+      translate(-50%, -50%)
+      scale(1.16)
+      rotateX(-12deg)
+      rotateY(-135deg)
+      rotateZ(2deg);
+  }
+  20% {
+    transform:
+      translate(-50%, -50%)
+      scale(1.04)
+      rotateX(-7deg)
+      rotateY(-180deg)
+      rotateZ(-1deg);
+  }
+  42% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.88)
+      rotateX(4deg)
+      rotateY(-225deg)
+      rotateZ(1deg);
+  }
+  65% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.70)
+      rotateX(9deg)
+      rotateY(-292deg)
+      rotateZ(-2deg);
+  }
+  82% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.42)
+      rotateX(-4deg)
+      rotateY(-340deg)
+      rotateZ(0deg);
+  }
+  100% {
+    transform:
+      translate(-50%, -50%)
+      scale(0.18)
+      rotateX(0deg)
+      rotateY(-360deg)
+      rotateZ(0deg);
+  }
+}
+
+/* ---------- Position movement ---------- */
+@keyframes contribMove {
+  0%, 100% { top: 30%; left: 50%; }
+  15% { top: 38%; left: 74%; }
+  30% { top: 21%; left: 74%; }
+  45% { top: 21%; left: 26%; }
+  60% { top: 61%; left: 26%; }
+  75% { top: 61%; left: 74%; }
+  90% { top: 30%; left: 50%; }
+}
+
+@keyframes compileMove {
+  0%, 100% { top: 68%; left: 50%; }
+  15% { top: 62%; left: 26%; }
+  30% { top: 79%; left: 26%; }
+  45% { top: 79%; left: 74%; }
+  60% { top: 38%; left: 74%; }
+  75% { top: 38%; left: 26%; }
+  90% { top: 68%; left: 50%; }
+}
+
+@keyframes auraPulse {
+  0%, 100% {
+    opacity: 0.12;
+    filter: blur(42px);
+  }
+  50% {
+    opacity: 0.26;
+    filter: blur(60px);
+  }
+}
+
+/* ---------- Responsive 3D text ---------- */
+@media (max-width: 900px) {
+  .contrib .text-layer,
+  .contrib .text-shadow,
+  .contrib .gold-aura {
+    font-size: clamp(30px, 8vw, 72px);
+  }
+
+  .compile .text-layer,
+  .compile .text-shadow,
+  .compile .gold-aura {
+    font-size: clamp(19px, 5vw, 48px);
+  }
+}
+
+@media (max-width: 640px) {
+  .scene-container {
+    perspective: 720px;
+  }
+
+  .contrib .text-layer,
+  .contrib .text-shadow,
+  .contrib .gold-aura {
+    font-size: clamp(24px, 9.5vw, 52px);
+  }
+
+  .compile .text-layer,
+  .compile .text-shadow,
+  .compile .gold-aura {
+    font-size: clamp(15px, 5.7vw, 32px);
+  }
+
+  .text-layer.front {
+    -webkit-text-stroke: 0.7px rgba(165, 180, 252, 0.4);
+    text-shadow:
+      0 0 7px rgba(37, 99, 255, 0.6),
+      0 0 18px rgba(37, 99, 255, 0.38),
+      0 0 38px rgba(37, 99, 255, 0.18);
+  }
+}
+
+@media (max-width: 390px) {
+  .contrib .text-layer,
+  .contrib .text-shadow,
+  .contrib .gold-aura {
+    font-size: clamp(20px, 8.7vw, 38px);
+  }
+
+  .compile .text-layer,
+  .compile .text-shadow,
+  .compile .gold-aura {
+    font-size: clamp(13px, 5vw, 25px);
+  }
+}
+
+/* ---------- Motion ---------- */
+@keyframes backgroundAurora {
+  0% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1.5%, 1%, 0) scale(1.04);
+  }
+  100% {
+    transform: translate3d(2%, -1.5%, 0) scale(1.07);
+  }
+}
+
+@keyframes particleDrift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(4%, 3%, 0) rotate(4deg);
+  }
+}
+
+@keyframes gridParticleDrift {
+  0% { background-position: 20px 10px, 70px 50px; }
+  100% { background-position: 170px 120px, -40px 190px; }
+}
+
+@keyframes orbDrift {
+  0% { transform: translate3d(-12px, -8px, 0) scale(0.96); }
+  100% { transform: translate3d(24px, 18px, 0) scale(1.08); }
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 640px) {
+  .ambient-background::before,
+  .global-bg-root::before {
+    filter: blur(30px);
+    opacity: 0.72;
+  }
+
+  .global-bg-root::after,
+  .ambient-background::after {
+    opacity: 0.42;
+    background-size: 111px 127px, 177px 163px, 83px 101px, 149px 197px;
+  }
+
+  .glass-orb {
+    width: 160px;
+    height: 160px;
+    filter: blur(20px);
+  }
+
+  .grid {
+    opacity: 0.12;
+  }
+}
+
+/* Respect accessibility preferences */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  .global-bg-root::before,
+  .global-bg-root::after,
+  .ambient-background::before,
+  .ambient-background::after,
+  .grid,
+  .glass-orb,
+  .scene,
+  .gold-aura {
+    animation: none !important;
+  }
+}
