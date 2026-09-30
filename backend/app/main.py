@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.issues import router as issues_router
 from app.api.contributions import router as contributions_router
+from app.ai.llm_client import LLMAuthError, LLMRateLimitError
 from app.core.config import settings
 
 logging.basicConfig(
@@ -18,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-app=FastAPI(
+app = FastAPI(
     title="ContribPilot API",
     description=(
         "AI-Powered GitHub contribution assistant"
@@ -32,7 +33,7 @@ app.add_middleware(
     allow_origins=[settings.FRONTEND_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 
@@ -48,13 +49,14 @@ app.include_router(
     tags=["Contributions"],
 )
 
+
 @app.get(
     "/health",
     tags=["Health"],
-   )
+)
 def health_check():
     return {
-        "status" : "ok",
+        "status": "ok",
         "service": "ContribPilot API",
     }
 
@@ -74,10 +76,38 @@ async def validation_exception_handler(
     )
 
 
+@app.exception_handler(LLMAuthError)
+async def llm_auth_exception_handler(
+    request: Request,
+    exc: LLMAuthError,
+):
+    return JSONResponse(
+        status_code=401,
+        content={
+            "error": "InvalidLLMKey",
+            "message": str(exc),
+        },
+    )
+
+
+@app.exception_handler(LLMRateLimitError)
+async def llm_rate_limit_exception_handler(
+    request: Request,
+    exc: LLMRateLimitError,
+):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "LLMRateLimited",
+            "message": str(exc),
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(
     request: Request,
-    exc: Exception
+    exc: Exception,
 ):
     logger.exception(
         "Unhandled exception on %s %s",

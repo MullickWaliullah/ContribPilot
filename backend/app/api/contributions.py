@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.ai.llm_client import LLMError
+from app.core.credentials import UserCredentials, get_credentials
 from app.schemas.request import HintRequest
 from app.schemas.ai import HintResponse
 from app.services import ai_service
@@ -16,14 +18,20 @@ router = APIRouter()
 @router.post(
     "/hint",
     response_model=HintResponse,
-    )
-def get_hint(request: HintRequest ) -> HintResponse:
+)
+def get_hint(
+    request: HintRequest,
+    credentials: UserCredentials = Depends(get_credentials),
+) -> HintResponse:
     try:
         return ai_service.get_hint(
             level=request.level,
             issue_context=request.issue_context,
             current_progress=request.current_progress,
+            credentials=credentials,
         )
+    except LLMError:
+        raise
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -48,5 +56,3 @@ def get_hint(request: HintRequest ) -> HintResponse:
             status_code=500,
             detail="Internal server error.",
         ) from exc
-
-    
