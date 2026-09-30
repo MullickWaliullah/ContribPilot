@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 import re
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 
+from app.ai.llm_client import LLMError
+from app.core.credentials import UserCredentials, get_credentials
 from app.schemas.request import (
     RecommendRequest,
     BreakdownRequest,
     RecommendResponse,
-    BreakdownWrapper
+    BreakdownWrapper,
 )
 
 from app.services import ai_service, github_service
@@ -19,11 +21,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-
 REPO_PATTERN = re.compile(r"^[^/\s]+/[^/\s]+$")
 
-def _validate_repo(repo: str) -> str:
 
+def _validate_repo(repo: str) -> str:
     repo = repo.strip()
 
     if not REPO_PATTERN.fullmatch(repo):
@@ -35,6 +36,9 @@ def _validate_repo(repo: str) -> str:
 
 
 def _handle_service_exception(exc: Exception) -> None:
+    if isinstance(exc, LLMError):
+        raise exc
+
     if isinstance(exc, github_service.InvalidRepoError):
         raise HTTPException(
             status_code=400,
@@ -50,18 +54,15 @@ def _handle_service_exception(exc: Exception) -> None:
     if isinstance(exc, github_service.RateLimitError):
         raise HTTPException(
             status_code=429,
-            detail=(
-                "GitHub API rate limit exceeded. "
-                "Please try again later."
-            ),
+            detail=str(exc) or "GitHub API rate limit exceeded. Please try again later.",
         )
 
     if isinstance(exc, github_service.AuthError):
-        logger.error("GitHub authentication/configuration error: %s",exc)
+        logger.warning("GitHub token rejected: %s", exc)
 
         raise HTTPException(
-            status_code=500,
-            detail="GitHub authentication is not configured correctly.",
+            status_code=401,
+            detail="Invalid GitHub token. Please check your token in Settings.",
         )
 
     if isinstance(exc, ValueError):
@@ -80,16 +81,18 @@ def _handle_service_exception(exc: Exception) -> None:
 
     raise HTTPException(
         status_code=500,
-        detail="Internal server error."
+        detail="Internal server error.",
     )
-
 
 
 @router.post(
     "/recommend",
     response_model=RecommendResponse,
-    )
-def recommend_issues(request: RecommendRequest) -> RecommendResponse:
+)
+def recommend_issues(
+    request: RecommendRequest,
+    credentials: UserCredentials = Depends(get_credentials),
+) -> RecommendResponse:
     repo = _validate_repo(request.repo)
 
     if not request.skills:
@@ -103,6 +106,7 @@ def recommend_issues(request: RecommendRequest) -> RecommendResponse:
             skills=request.skills,
             experience=request.experience,
             repo=repo,
+            credentials=credentials,
             limit=request.limit,
         )
 
@@ -118,19 +122,21 @@ def recommend_issues(request: RecommendRequest) -> RecommendResponse:
     raise RuntimeError("Unreachable")
 
 
-
-
 @router.post(
     "/{issue_id}/breakdown",
     response_model=BreakdownWrapper,
-    )
-def get_issue_breakdown(issue_id: int = Path(..., gt=0, description="GitHub issue number. Must be greater than 0.",), request: BreakdownRequest = ... ) -> BreakdownWrapper:
+)
+def get_issue_breakdown(
+    issue_id: int = Path(..., gt=0, description="GitHub issue number. Must be greater than 0."),
+    request: BreakdownRequest = ...,
+    credentials: UserCredentials = Depends(get_credentials),
+) -> BreakdownWrapper:
     repo = _validate_repo(request.repo)
 
     if not request.skills:
         raise HTTPException(
             status_code=400,
-            detail="At least one skill is required."
+            detail="At least one skill is required.",
         )
 
     try:
@@ -139,6 +145,7 @@ def get_issue_breakdown(issue_id: int = Path(..., gt=0, description="GitHub issu
             repo=repo,
             skills=request.skills,
             experience=request.experience,
+            credentials=credentials,
         )
 
         return BreakdownWrapper(
