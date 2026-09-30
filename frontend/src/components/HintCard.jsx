@@ -1,55 +1,181 @@
 import { useState } from "react";
+
 import {
   Lightbulb,
-  Lock,
   Loader2,
-  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Focus,
   FileCode2,
   Hash,
   TestTube2,
   Target,
-  Focus,
+  Braces,
 } from "lucide-react";
+
 import { getHint } from "../services/api.js";
-import { getUnlockedHint, setUnlockedHint } from "../utils/sessions.js";
 
-// ---------- Safe JSON parse for nested hint_text ----------
 function parseHintPayload(raw) {
-  if (raw == null) return null;
-
-  // If already an object, return as-is
-  if (typeof raw === "object") return raw;
-
-  if (typeof raw !== "string") return null;
-
-  // Try JSON.parse, fall back to plain text
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") return parsed;
-    return { focus_summary: String(parsed) };
-  } catch {
-    return { focus_summary: raw };
+  if (raw == null) {
+    return null;
   }
+
+  if (typeof raw === "object") {
+    return raw;
+  }
+
+  if (typeof raw !== "string") {
+    return {
+      focus_summary: String(raw),
+    };
+  }
+
+  let current = raw.trim();
+
+  if (!current) {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    current = current
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    try {
+      const parsed = JSON.parse(current);
+
+      if (
+        parsed !== null &&
+        typeof parsed === "object"
+      ) {
+        return parsed;
+      }
+
+      return {
+        focus_summary: String(parsed),
+      };
+    } catch {
+      const firstBrace = current.indexOf("{");
+      const lastBrace = current.lastIndexOf("}");
+
+      if (
+        firstBrace !== -1 &&
+        lastBrace > firstBrace
+      ) {
+        current = current.slice(
+          firstBrace,
+          lastBrace + 1
+        );
+
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  return {
+    focus_summary: current,
+  };
 }
 
-// ---------- Small inline chip list ----------
-function MiniChipList({ label, items = [], icon: Icon }) {
-  if (!items || !items.length) return null;
+function formatLabel(key) {
+  return String(key)
+    .replace(/_/g, " ")
+    .replace(
+      /([a-z])([A-Z])/g,
+      "$1 $2"
+    )
+    .replace(
+      /\b\w/g,
+      (char) => char.toUpperCase()
+    );
+}
+
+function HintValue({ value }) {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    return (
+      <p className="text-[14px] sm:text-[15px] text-white/90 font-mono leading-7 whitespace-pre-wrap break-words">
+        {value}
+      </p>
+    );
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return (
+      <span className="text-[14px] sm:text-[15px] text-white/90 font-mono leading-7">
+        {String(value)}
+      </span>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {value.map((item, index) => (
+          <span
+            key={index}
+            className="px-3 py-1.5 text-[12px] sm:text-[13px] font-mono rounded-lg border border-white/15 text-white/90 leading-5"
+          >
+            {typeof item === "object"
+              ? JSON.stringify(item)
+              : String(item)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof value === "object") {
+    return (
+      <pre className="text-[13px] sm:text-[14px] text-white/85 font-mono leading-6 whitespace-pre-wrap break-words overflow-x-auto">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    );
+  }
+
+  return null;
+}
+
+function MiniChipList({
+  label,
+  items = [],
+  icon: Icon,
+}) {
+  if (!items || !items.length) {
+    return null;
+  }
+
   return (
-    <div className="mt-3">
-      <div className="flex items-center gap-1.5 mb-2">
-        {Icon && <Icon className="w-3 h-3 text-white/60" />}
-        <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-white/60">
+    <div className="mt-4">
+      <div className="flex items-center gap-2 mb-2.5">
+        {Icon && (
+          <Icon className="w-3.5 h-3.5 text-white/60" />
+        )}
+
+        <span className="text-[11px] font-mono uppercase tracking-[0.15em] text-white/60">
           {label}
         </span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((item, i) => (
+
+      <div className="flex flex-wrap gap-2">
+        {items.map((item, index) => (
           <span
-            key={i}
-            className="px-2 py-1 text-[10px] font-mono rounded-md border border-white/15 text-white/85"
+            key={index}
+            className="px-2.5 py-1.5 text-[11px] sm:text-[12px] font-mono rounded-md border border-white/15 text-white/90 leading-5"
           >
-            {typeof item === "string" ? item : JSON.stringify(item)}
+            {typeof item === "string"
+              ? item
+              : JSON.stringify(item)}
           </span>
         ))}
       </div>
@@ -57,113 +183,306 @@ function MiniChipList({ label, items = [], icon: Icon }) {
   );
 }
 
-// ---------- Render a single hint's structured content ----------
-function HintContent({ payload }) {
-  if (!payload) return null;
+function renderSpecialField(key, value) {
+  const normalizedKey =
+    String(key).toLowerCase();
 
-  const {
-    focus_summary,
-    files_to_check = [],
-    symbols_to_inspect = [],
-    relevant_tests = [],
-    areas_of_interest = [],
-    guidance_level,
-  } = payload;
+  const fileKeys = [
+    "file",
+    "files",
+    "target_file",
+    "files_to_check",
+    "files_to_inspect",
+  ];
 
-  const hasAny =
-    focus_summary ||
-    files_to_check.length ||
-    symbols_to_inspect.length ||
-    relevant_tests.length ||
-    areas_of_interest.length;
+  const symbolKeys = [
+    "symbol",
+    "symbols",
+    "target_symbol",
+    "symbols_to_inspect",
+    "relevant_symbols",
+  ];
 
-  if (!hasAny) {
+  const testKeys = [
+    "test",
+    "tests",
+    "relevant_tests",
+  ];
+
+  const areaKeys = [
+    "area",
+    "areas",
+    "areas_of_interest",
+    "areas_to_inspect",
+  ];
+
+  if (
+    fileKeys.some((item) =>
+      normalizedKey.includes(item)
+    )
+  ) {
+    const items = Array.isArray(value)
+      ? value
+      : [value];
+
     return (
-      <p className="text-[12px] font-mono text-white/60 italic">
+      <MiniChipList
+        label={formatLabel(key)}
+        items={items}
+        icon={FileCode2}
+      />
+    );
+  }
+
+  if (
+    symbolKeys.some((item) =>
+      normalizedKey.includes(item)
+    )
+  ) {
+    const items = Array.isArray(value)
+      ? value
+      : [value];
+
+    return (
+      <MiniChipList
+        label={formatLabel(key)}
+        items={items}
+        icon={Hash}
+      />
+    );
+  }
+
+  if (
+    testKeys.some((item) =>
+      normalizedKey.includes(item)
+    )
+  ) {
+    const items = Array.isArray(value)
+      ? value
+      : [value];
+
+    return (
+      <MiniChipList
+        label={formatLabel(key)}
+        items={items}
+        icon={TestTube2}
+      />
+    );
+  }
+
+  if (
+    areaKeys.some((item) =>
+      normalizedKey.includes(item)
+    )
+  ) {
+    const items = Array.isArray(value)
+      ? value
+      : [value];
+
+    return (
+      <MiniChipList
+        label={formatLabel(key)}
+        items={items}
+        icon={Target}
+      />
+    );
+  }
+
+  return null;
+}
+
+function HintContent({ payload }) {
+  if (!payload) {
+    return (
+      <p className="text-[13px] font-mono text-white/50 italic">
+        No hint content provided.
+      </p>
+    );
+  }
+
+  if (
+    typeof payload === "string" ||
+    typeof payload === "number"
+  ) {
+    return (
+      <p className="text-[14px] sm:text-[15px] text-white/90 font-mono leading-7 whitespace-pre-wrap break-words">
+        {String(payload)}
+      </p>
+    );
+  }
+
+  const entries = Object.entries(payload);
+
+  if (!entries.length) {
+    return (
+      <p className="text-[13px] font-mono text-white/50 italic">
         No hint content provided.
       </p>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {focus_summary && (
-        <p className="text-sm text-white/85 font-mono leading-relaxed whitespace-pre-wrap">
-          {focus_summary}
-        </p>
-      )}
+    <div className="space-y-6">
+      {entries.map(([key, value]) => {
+        if (
+          value === null ||
+          value === undefined ||
+          value === ""
+        ) {
+          return null;
+        }
 
-      <MiniChipList
-        label="Files to check"
-        items={files_to_check}
-        icon={FileCode2}
-      />
-      <MiniChipList
-        label="Symbols to inspect"
-        items={symbols_to_inspect}
-        icon={Hash}
-      />
-      <MiniChipList
-        label="Relevant tests"
-        items={relevant_tests}
-        icon={TestTube2}
-      />
-      <MiniChipList
-        label="Areas of interest"
-        items={areas_of_interest}
-        icon={Target}
-      />
+        if (key === "guidance_level") {
+          return (
+            <div
+              key={key}
+              className="flex items-center gap-2.5"
+            >
+              <Braces className="w-4 h-4 text-white/50" />
 
-      {guidance_level != null && (
-        <div className="pt-2 text-[10px] font-mono uppercase tracking-[0.15em] text-white/40">
-          Guidance level {guidance_level}
-        </div>
-      )}
+              <span className="text-[11px] font-mono uppercase tracking-[0.15em] text-white/55">
+                Guidance Level
+              </span>
+
+              <span className="text-[13px] font-mono text-white/90">
+                {String(value)}
+              </span>
+            </div>
+          );
+        }
+
+        const special = renderSpecialField(
+          key,
+          value
+        );
+
+        if (special) {
+          return (
+            <div key={key}>
+              {special}
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={key}
+            className="space-y-2"
+          >
+            <div className="flex items-center gap-2.5">
+              <Focus className="w-3.5 h-3.5 text-white/50" />
+
+              <span className="text-[11px] font-mono uppercase tracking-[0.15em] text-white/55">
+                {formatLabel(key)}
+              </span>
+            </div>
+
+            <div className="pl-6">
+              <HintValue value={value} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ---------- Main component ----------
 export default function HintCard({
   issueId,
   issueContext = {},
   currentProgress = {},
 }) {
-  const [unlocked, setUnlocked] = useState(() => getUnlockedHint(issueId));
-  const [hints, setHints] = useState({}); // { 1: payloadObj, 2: ..., 3: ... }
-  const [loading, setLoading] = useState(null);
-  const [error, setError] = useState(null);
+  const [openLevels, setOpenLevels] =
+    useState({});
 
-  const handleUnlock = async (level) => {
-    // Sequential guard
-    if (level > 1 && unlocked < level - 1) {
-      setError(`Pehle hint ${level - 1} unlock karo.`);
+  const [hints, setHints] = useState({});
+
+  const [loading, setLoading] =
+    useState(null);
+
+  const [error, setError] =
+    useState(null);
+
+  const handleHintClick = async (level) => {
+    setError(null);
+
+    const alreadyLoaded =
+      Boolean(hints[level]);
+
+    if (alreadyLoaded) {
+      setOpenLevels((prev) => ({
+        ...prev,
+        [level]: !prev[level],
+      }));
+
       return;
     }
 
-    setError(null);
     setLoading(level);
 
     try {
+      console.log(
+        `[ContribPilot] Requesting hint ${level}`,
+        {
+          issueId,
+          issueContext,
+          currentProgress,
+        }
+      );
+
       const data = await getHint({
         level,
         issue_context: issueContext,
-        current_progress: currentProgress,
+        current_progress:
+          currentProgress || {},
       });
 
-      // Backend returns { level, hint_text }
-      // hint_text is a STRINGIFIED JSON — parse it
-      const raw = data.hint_text ?? data.hint ?? data.text ?? data.content;
-      const parsed = parseHintPayload(raw) ?? {};
+      console.log(
+        `[ContribPilot] Hint ${level} response`,
+        data
+      );
 
-      setHints((prev) => ({ ...prev, [level]: parsed }));
+      const raw = data?.hint_text;
 
-      if (level > unlocked) {
-        setUnlocked(level);
-        setUnlockedHint(issueId, level);
+      if (
+        raw === null ||
+        raw === undefined ||
+        String(raw).trim() === ""
+      ) {
+        throw new Error(
+          `Hint ${level} returned empty content.`
+        );
       }
+
+      const parsed =
+        parseHintPayload(raw);
+
+      if (!parsed) {
+        throw new Error(
+          `Unable to parse Hint ${level}.`
+        );
+      }
+
+      setHints((prev) => ({
+        ...prev,
+        [level]: parsed,
+      }));
+
+      setOpenLevels((prev) => ({
+        ...prev,
+        [level]: true,
+      }));
     } catch (e) {
-      setError(e.message);
+      console.error(
+        `[ContribPilot] Hint ${level} failed`,
+        e
+      );
+
+      setError(
+        e instanceof Error
+          ? e.message
+          : `Failed to generate Hint ${level}.`
+      );
     } finally {
       setLoading(null);
     }
@@ -173,8 +492,9 @@ export default function HintCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-transparent p-6 sm:p-7 shadow-[0_0_40px_-10px_rgba(139,92,246,0.2)]">
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex items-center gap-2 mb-6">
         <Lightbulb className="w-4 h-4 text-white" />
+
         <h2 className="text-xs font-mono tracking-[0.15em] text-white uppercase">
           Guided Hints
         </h2>
@@ -182,55 +502,63 @@ export default function HintCard({
 
       <div className="space-y-3">
         {levels.map((level) => {
-          const isUnlocked = unlocked >= level;
-          const isAvailable = unlocked + 1 >= level;
-          const isLoading = loading === level;
-          const payload = hints[level];
+          const isOpen =
+            Boolean(openLevels[level]);
+
+          const isLoading =
+            loading === level;
+
+          const hasHint =
+            Boolean(hints[level]);
 
           return (
             <div
               key={level}
-              className={`rounded-xl border p-4 transition ${
-                isUnlocked
-                  ? "border-green-500/30"
-                  : isAvailable
-                  ? "border-[#6d8cff]/40"
-                  : "border-white/10 opacity-60"
-              }`}
+              className="rounded-xl border border-white/10 overflow-hidden transition-all duration-300"
             >
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <Focus className="w-3.5 h-3.5 text-white/70" />
-                  <span className="text-[10px] font-mono tracking-[0.15em] text-white/70 uppercase">
+              <button
+                type="button"
+                onClick={() =>
+                  handleHintClick(level)
+                }
+                disabled={isLoading}
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-white/[0.03] transition-colors disabled:opacity-60"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Focus className="w-4 h-4 text-white/70" />
+
+                  <span className="text-[12px] font-mono tracking-[0.15em] text-white/90 uppercase">
                     Hint {level}
                   </span>
                 </div>
 
-                {isUnlocked && (
-                  <span className="flex items-center gap-1 text-[10px] font-mono text-green-400">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Unlocked
-                  </span>
-                )}
-              </div>
-
-              {isUnlocked && <HintContent payload={payload} />}
-
-              {!isUnlocked && (
-                <button
-                  onClick={() => handleUnlock(level)}
-                  disabled={!isAvailable || isLoading}
-                  className="inline-flex items-center gap-2 text-white text-[11px] font-mono uppercase tracking-wider px-3 py-1.5 rounded-lg border border-white/20 hover:border-white/40 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : isAvailable ? (
-                    <Lightbulb className="w-3 h-3" />
-                  ) : (
-                    <Lock className="w-3 h-3" />
+                <div className="flex items-center gap-2">
+                  {isLoading && (
+                    <Loader2 className="w-4 h-4 text-white/60 animate-spin" />
                   )}
-                  {isAvailable ? "Unlock hint" : "Locked"}
-                </button>
+
+                  {!isLoading &&
+                    (isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-white/60" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-white/60" />
+                    ))}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-white/10 px-5 sm:px-6 py-6">
+                  {hasHint ? (
+                    <HintContent
+                      payload={hints[level]}
+                    />
+                  ) : isLoading ? (
+                    <div className="flex items-center gap-2 text-[13px] font-mono text-white/55">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating hint...
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
           );
@@ -238,7 +566,9 @@ export default function HintCard({
       </div>
 
       {error && (
-        <p className="mt-4 text-[11px] font-mono text-yellow-300">{error}</p>
+        <p className="mt-5 text-[12px] font-mono text-yellow-300 leading-6 whitespace-pre-wrap">
+          {error}
+        </p>
       )}
     </div>
   );

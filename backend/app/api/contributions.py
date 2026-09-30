@@ -23,7 +23,7 @@ def get_hint(
     request: HintRequest,
     credentials: UserCredentials = Depends(get_credentials),
 ) -> HintResponse:
-    try:
+    try: 
         return ai_service.get_hint(
             level=request.level,
             issue_context=request.issue_context,
