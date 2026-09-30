@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-import re
+from typing import Any
 
-from app.ai.llm_client import LLMError, chat_completion
 from app.ai.breakdown import _truncate
+from app.ai.llm_client import LLMError, chat_completion
 from app.schemas.ai import HintResponse
 
 logger = logging.getLogger(__name__)
@@ -15,197 +15,470 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 def _load_prompt(level: int) -> str:
     if level not in (1, 2, 3):
-        raise ValueError("Hint level must be 1, 2, 3.")
+        raise ValueError("Hint level must be 1, 2 or 3.")
 
     prompt_path = PROMPTS_DIR / f"hint_{level}.txt"
 
     if not prompt_path.exists():
-        raise FileNotFoundError(f"Hint prompt file not found : {prompt_path}")
+        raise FileNotFoundError(
+            f"Hint prompt file not found: {prompt_path}"
+        )
 
     if not prompt_path.is_file():
-        raise FileNotFoundError(f"Hint prompt path is not a file : {prompt_path}")
+        raise FileNotFoundError(
+            f"Hint prompt path is not a file: {prompt_path}"
+        )
 
     try:
-        return prompt_path.read_text(encoding="utf-8")
+        prompt = prompt_path.read_text(
+            encoding="utf-8"
+        ).strip()
     except OSError as exc:
-        raise RuntimeError(f"Failed to read hint prompt : {prompt_path}") from exc
+        raise RuntimeError(
+            f"Failed to read hint prompt: {prompt_path}"
+        ) from exc
+
+    if not prompt:
+        raise ValueError(
+            f"Hint prompt file is empty: {prompt_path}"
+        )
+
+    return prompt
 
 
-def _check_level_allowed(level: int, current_progress: dict) -> bool:
+def _check_level_allowed(
+    level: int,
+    current_progress: dict[str, Any],
+) -> bool:
     if level not in (1, 2, 3):
-        raise ValueError("Level must be 1, 2 or 3")
-
-    if level == 1:
-        return True
-
-    shown_levels = current_progress.get("hint_levels_shown", [])
-
-    if not isinstance(shown_levels, list):
-        shown_levels = []
-
-    if level == 2:
-        if 1 not in shown_levels:
-            raise ValueError("Please request level 1 first")
-
-    if level == 3:
-        if 1 not in shown_levels:
-            raise ValueError("Please request level 1 first")
-
-        if 2 not in shown_levels:
-            raise ValueError("Please request level 2 first")
+        raise ValueError(
+            "Hint level must be 1, 2 or 3."
+        )
 
     return True
 
 
-def _build_user_message(level: int, issue_context: dict, current_progress: dict) -> str:
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return value
+
+    if isinstance(value, tuple):
+        return list(value)
+
+    if isinstance(value, str):
+        value = value.strip()
+
+        if not value:
+            return []
+
+        return [value]
+
+    return [value]
+
+
+def _build_user_message(
+    level: int,
+    issue_context: dict[str, Any],
+    current_progress: dict[str, Any],
+) -> str:
+
+    if not isinstance(issue_context, dict):
+        issue_context = {}
+
+    if not isinstance(current_progress, dict):
+        current_progress = {}
+
     issue = issue_context.get("issue", {})
     repository = issue_context.get("repository", {})
-    issue_title = issue.get("title", "")
-    issue_body = _truncate(str(issue.get("body", "")), 3000)
-    issue_labels = issue.get("labels", [])
-    primary_language = repository.get("primary_language", "")
-    relevant_files = repository.get("relevant_files", [])
-    relevant_symbols = repository.get("relevant_symbols", [])
-    previous_hints = current_progress.get("previous_hints", {})
+
+    if not isinstance(issue, dict):
+        issue = {}
+
+    if not isinstance(repository, dict):
+        repository = {}
+
+    issue_title = str(
+        issue.get("title")
+        or issue_context.get("title")
+        or ""
+    ).strip()
+
+    issue_body = str(
+        issue.get("body")
+        or issue_context.get("body")
+        or ""
+    ).strip()
+
+    issue_body = _truncate(
+        issue_body,
+        3000,
+    )
+
+    issue_labels = (
+        issue.get("labels")
+        or issue_context.get("labels")
+        or []
+    )
+
+    primary_language = str(
+        repository.get("primary_language")
+        or repository.get("language")
+        or issue_context.get("primary_language")
+        or issue_context.get("language")
+        or ""
+    ).strip()
+
+    repository_name = str(
+        repository.get("name")
+        or repository.get("full_name")
+        or issue_context.get("repo")
+        or issue_context.get("repository")
+        or ""
+    ).strip()
+
+    relevant_files = (
+        repository.get("relevant_files")
+        or issue_context.get("files_to_inspect")
+        or []
+    )
+
+    relevant_symbols = (
+        repository.get("relevant_symbols")
+        or issue_context.get("relevant_symbols")
+        or []
+    )
+
+    concepts_to_understand = _as_list(
+        issue_context.get("concepts_to_understand")
+        or issue_context.get("concepts")
+    )
+
+    confirmed_facts = _as_list(
+        issue_context.get("confirmed_facts")
+    )
+
+    investigation_steps = _as_list(
+        issue_context.get("investigation_steps")
+    )
+
+    verification_target = str(
+        issue_context.get("verification_target")
+        or ""
+    ).strip()
+
+    focus_summary = str(
+        issue_context.get("focus_summary")
+        or issue_context.get("problem_summary")
+        or ""
+    ).strip()
+
+    current_behavior = str(
+        issue_context.get("current_behavior")
+        or ""
+    ).strip()
+
+    expected_behavior = str(
+        issue_context.get("expected_behavior")
+        or ""
+    ).strip()
+
+    if not issue_body and focus_summary:
+        issue_body = _truncate(
+            focus_summary,
+            3000,
+        )
+
+    previous_hints = current_progress.get(
+        "previous_hints",
+        {},
+    )
 
     if not isinstance(previous_hints, dict):
         previous_hints = {}
 
-    previous_hints_text = []
+    previous_hint_parts = []
 
-    for hint_level in ("1", "2"):
-        hint = previous_hints.get(hint_level)
+    for level_number, hint in previous_hints.items():
+        if hint is None:
+            continue
 
-        if hint:
-            previous_hints_text.append(
-                f"Level {hint_level}:\n"
-                f"{hint}"
-            )
+        hint_value = str(hint).strip()
 
-    if previous_hints_text:
-        previous_hints_text = "\n\n".join(previous_hints_text)
+        if not hint_value:
+            continue
+
+        previous_hint_parts.append(
+            f"Level {level_number}: {hint_value}"
+        )
+
+    previous_hint_text = "\n".join(
+        previous_hint_parts
+    )
+
+    if level == 1:
+        level_instruction = """
+Give the contributor a useful starting point.
+
+Explain where they should look in the repository
+and which files, classes, functions, modules, or
+code areas are likely relevant.
+
+Keep it focused on helping them start investigating.
+"""
+
+    elif level == 2:
+        level_instruction = """
+Explain the relevant logic behind the issue.
+
+Describe what behavior needs to be understood,
+what part of the existing implementation matters,
+and what should be investigated.
+
+Give enough detail to help the contributor move
+towards the solution.
+"""
+
     else:
-        previous_hints_text = "(none)"
+        level_instruction = """
+Give a concrete solution direction.
 
-    if isinstance(issue_labels, list):
-        labels_text = ", ".join(str(label) for label in issue_labels)
-    else:
-        labels_text = str(issue_labels)
+Explain how the contributor can approach fixing
+the issue.
 
-    if isinstance(relevant_files, list):
-        files_text = "\n".join(str(file) for file in relevant_files[:100])
-    else:
-        files_text = str(relevant_files)
+You may provide code examples or implementation
+details if useful.
 
-    if isinstance(relevant_symbols, list):
-        symbols_text = "\n".join(str(symbol) for symbol in relevant_symbols[:100])
-    else:
-        symbols_text = str(relevant_symbols)
-
-    level_instructions = {
-        1: (
-            "Only tell WHERE to look."
-            "No code. No bug explanation."
-        ),
-        2: (
-            "Explain WHAT behavior is wrong."
-            "No full patch. No extra code line."
-        ),
-        3: (
-            "Explain How to fix."
-            "Code is allowed. Keep the guidance minimal."
-        ),
-    }
+Keep the solution directly related to the issue.
+"""
 
     return f"""
-    ISSUE :
-    - Title : {issue_title}
-    - Body : {issue_body}
-    - Labels : {labels_text}
+Generate a level {level} hint for an open-source
+contribution.
 
-    REPOSITORY CONTEXT:
-    - Primary Language : {primary_language}
+Repository:
+{repository_name or "Not provided"}
 
-    Relevant Files:
-    {files_text}
+Issue title:
+{issue_title or "Not provided"}
 
-    Relevant Symbols:
-    {symbols_text}
+Issue description:
+{issue_body or "Not provided"}
 
-    PREVIOUS HINTS:
-    {previous_hints_text}
+Focus summary:
+{focus_summary or "Not provided"}
 
-    REQUESTED LEVEL:
-    {level}
+Current behavior:
+{current_behavior or "Not provided"}
 
-    LEVEL INSTRUCTIONS:
-    {level_instructions[level]}
+Expected behavior:
+{expected_behavior or "Not provided"}
 
-    Return ONLY the hint text.
-    No JSON.
-    No markdown wrapper.
+Issue labels:
+{issue_labels}
+
+Primary language:
+{primary_language or "Not provided"}
+
+Relevant files:
+{relevant_files}
+
+Relevant symbols:
+{relevant_symbols}
+
+Concepts to understand:
+{concepts_to_understand}
+
+Confirmed facts:
+{confirmed_facts}
+
+Investigation steps:
+{investigation_steps}
+
+Verification target:
+{verification_target or "Not provided"}
+
+Previously shown hints:
+{previous_hint_text or "None"}
+
+The user can request any hint level directly.
+Do not assume previous hint levels were completed.
+
+Instructions for this hint level:
+{level_instruction}
+
+Return only the hint content.
+Do not return JSON.
+Do not add unnecessary metadata.
 """.strip()
 
 
-def _Validate_hint_output(level: int, hint_text: str) -> tuple[bool, str]:
-    if level not in (1, 2, 3):
-        return False, "Invalid hint level."
+def _clean_hint_text(value: Any) -> str:
+    if value is None:
+        return ""
 
-    if not isinstance(hint_text, str):
-        return False, "Hint output must be text."
+    if isinstance(value, str):
+        return value.strip()
 
-    hint_text = hint_text.strip()
+    return str(value).strip()
+
+
+def _extract_response_text(response: Any) -> str:
+    if response is None:
+        return ""
+
+    choices = getattr(
+        response,
+        "choices",
+        None,
+    )
+
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+
+    message = getattr(
+        first_choice,
+        "message",
+        None,
+    )
+
+    if message is not None:
+
+        content = getattr(
+            message,
+            "content",
+            None,
+        )
+
+        if isinstance(content, str):
+            return _clean_hint_text(content)
+
+        if isinstance(content, list):
+
+            text_parts = []
+
+            for item in content:
+
+                if isinstance(item, str):
+                    text_parts.append(item)
+                    continue
+
+                if isinstance(item, dict):
+
+                    item_text = item.get("text")
+
+                    if item_text:
+                        text_parts.append(
+                            str(item_text)
+                        )
+
+                    continue
+
+                item_text = getattr(
+                    item,
+                    "text",
+                    None,
+                )
+
+                if item_text:
+                    text_parts.append(
+                        str(item_text)
+                    )
+
+            return _clean_hint_text(
+                "\n".join(text_parts)
+            )
+
+    text = getattr(
+        first_choice,
+        "text",
+        None,
+    )
+
+    if text:
+        return _clean_hint_text(text)
+
+    return ""
+
+
+def _request_hint(
+    *,
+    api_key: str,
+    system_prompt: str,
+    user_message: str,
+    level: int,
+    temperature: float = 0.3,
+) -> str:
+
+    try:
+
+        response = chat_completion(
+            api_key=api_key,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_message,
+                },
+            ],
+            temperature=temperature,
+            max_tokens=500,
+            stream=False,
+        )
+
+    except LLMError:
+        raise
+
+    except Exception as exc:
+
+        logger.exception(
+            "Hint generation failed for level %d",
+            level,
+        )
+
+        raise RuntimeError(
+            f"Failed to generate level {level} hint."
+        ) from exc
+
+    hint_text = _extract_response_text(
+        response
+    )
 
     if not hint_text:
-        return False, "Hint output is empty."
 
-    if level == 3:
-        return True, ""
+        logger.error(
+            "Groq returned an empty response for "
+            "level %d. Response=%r",
+            level,
+            response,
+        )
 
-    if "```" in hint_text:
-        if level == 1:
-            return False, "Level 1 must not contain code blocks."
-        if level == 2:
-            return False, "Level 2 must not contain multi-line code."
+        raise ValueError(
+            f"Groq returned an empty level {level} hint."
+        )
 
-    if level == 1:
-        forbidden_patterns = [
-            (r"\bdef\s+\w+\s*\(", "function definition"),
-            (r"\bfunction\s+\w+\s*\(", "function definition"),
-            (r"\breturn\s+.+", "return statement"),
-            (r"\bline\s+\d+\b", "exact line number"),
-            (r"\badd\s+(this|the)\s+line\b", "direct code instruction"),
-            (r"\breplace\s+(this|it)\s+with\b", "replacement instruction"),
-            (r"\bchange\s+(this|it)\s+to\b", "direct change instruction"),
-        ]
-
-        for pattern, reason in forbidden_patterns:
-            if re.search(pattern, hint_text, flags=re.IGNORECASE):
-                return False, f"Level 1 leaked {reason}."
-
-    if level == 2:
-        forbidden_patterns = [
-            (r"\bwrite\s+`[^`]+`", "inline code instruction"),
-            (r"\buse\s+this\s+code\b", "code instruction"),
-            (r"\badd\s+this\s+line\b", "direct code instruction"),
-            (r"\breplace\s+this\s+with\b", "replacement instruction"),
-            (r"\bchange\s+this\s+to\b", "direct implementation instruction"),
-        ]
-
-        for pattern, reason in forbidden_patterns:
-            if re.search(pattern, hint_text, flags=re.IGNORECASE):
-                return False, f"Level 2 leaked {reason}"
-
-    return True, ""
+    return hint_text
 
 
 def generate_hint(
+    *,
     level: int,
     issue_context: dict,
     current_progress: dict,
     api_key: str,
 ) -> HintResponse:
-    _check_level_allowed(level=level, current_progress=current_progress)
+
+    _check_level_allowed(
+        level=level,
+        current_progress=current_progress,
+    )
 
     system_prompt = _load_prompt(level)
 
@@ -215,89 +488,22 @@ def generate_hint(
         current_progress=current_progress,
     )
 
-    try:
-        response = chat_completion(
-            api_key=api_key,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.3,
-            max_tokens=400,
-            stream=False,
-        )
-    except LLMError:
-        raise
-    except Exception as exc:
-        logger.exception("Hint generation failed for level %d", level)
-        raise RuntimeError(f"Failed to generate level {level} hint.") from exc
-
-    hint_text = response.choices[0].message.content
-
-    if not hint_text:
-        raise ValueError(f"Groq returned an empty level {level} hint.")
+    hint_text = _request_hint(
+        api_key=api_key,
+        system_prompt=system_prompt,
+        user_message=user_message,
+        level=level,
+        temperature=0.3,
+    )
 
     hint_text = hint_text.strip()
 
-    is_valid, validation_error = _Validate_hint_output(level=level, hint_text=hint_text)
-
-    if not is_valid:
-        logger.warning(
-            "Invalid level %d hint generated: %s. Retrying.", level, validation_error
+    if not hint_text:
+        raise ValueError(
+            f"Generated level {level} hint is empty."
         )
 
-        stricter_message = (
-            f"{user_message}\n\n"
-            "STRICT CORRECTION :\n"
-            f"Your previous response was rejected because:"
-            f"{validation_error}\n"
-            "\n"
-            "Generate a new response that strictly follows"
-            f"the Level {level} rules.\n"
-            "Return ONLY the hint text.\n"
-            "Do not explain these instructions."
-        )
-
-        try:
-            retry_response = chat_completion(
-                api_key=api_key,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": stricter_message},
-                ],
-                temperature=0.3,
-                max_tokens=400,
-                stream=False,
-            )
-        except LLMError:
-            raise
-        except Exception as exc:
-            logger.exception("Hint retry failed for level %d", level)
-            raise RuntimeError(
-                f"Failed to generate level {level} hint"
-                "after validation retry."
-            ) from exc
-
-        hint_text = retry_response.choices[0].message.content
-
-        if not hint_text:
-            raise ValueError(
-                f"Groq returned an empty level {level} hint "
-                "on retry."
-            )
-
-        hint_text = hint_text.strip()
-
-        is_valid, validation_error = _Validate_hint_output(
-            level=level, hint_text=hint_text,
-        )
-
-        if not is_valid:
-            raise ValueError(
-                f"Generated level {level} hint failed validation"
-                f"after retry : {validation_error}"
-            )
-
-    hint_text = _truncate(hint_text, 800).strip()
-
-    return HintResponse(level=level, hint_text=hint_text)
+    return HintResponse(
+        level=level,
+        hint_text=hint_text,
+    )
